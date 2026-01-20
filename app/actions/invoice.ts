@@ -13,8 +13,8 @@ export interface Invoice {
   amount: number;
   created_at: string;
   updated_at: string;
-  user_email?: string;
-  user_name?: string;
+  user_email?: string | null;
+  user_name?: string | null;
 }
 
 export interface InvoiceWithUser extends Invoice {
