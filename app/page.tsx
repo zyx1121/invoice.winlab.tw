@@ -25,20 +25,20 @@ export default function Home() {
   const hasTriggeredLogin = useRef(false);
 
   // 獲取發票列表
-  useEffect(() => {
-    async function fetchInvoices() {
-      setLoading(true);
-      const result = await getInvoices();
-      if (result.error) {
-        setError(result.error);
-        setInvoices(null);
-      } else {
-        setError(null);
-        setInvoices(result.data || []);
-      }
-      setLoading(false);
+  const fetchInvoices = async () => {
+    setLoading(true);
+    const result = await getInvoices();
+    if (result.error) {
+      setError(result.error);
+      setInvoices(null);
+    } else {
+      setError(null);
+      setInvoices(result.data || []);
     }
+    setLoading(false);
+  };
 
+  useEffect(() => {
     fetchInvoices();
   }, []);
 
@@ -60,7 +60,7 @@ export default function Home() {
     <div className="flex flex-col item-center justify-center max-w-5xl mx-auto p-4 gap-4">
       <div className="flex flex-row items-center justify-between w-full">
         <h2 className="text-xl font-bold mx-2">發票列表</h2>
-        <AddInvoice />
+        <AddInvoice onSuccess={fetchInvoices} />
       </div>
       {error && (
         <div className="text-sm text-red-500 bg-red-50 dark:bg-red-950 p-3 rounded">
@@ -109,7 +109,7 @@ export default function Home() {
                     <DownloadIcon className="w-4 h-4" />
                   </Button>
                 </Link>
-                <DeleteButton invoiceId={invoice.id} />
+                <DeleteButton invoiceId={invoice.id} onSuccess={fetchInvoices} />
               </ItemActions>
             </Item>
           ))

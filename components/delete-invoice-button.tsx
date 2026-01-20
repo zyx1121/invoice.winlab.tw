@@ -3,11 +3,17 @@
 import { deleteInvoice } from "@/app/actions/invoice";
 import { Button } from "@/components/ui/button";
 import { TrashIcon } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-export function DeleteButton({ invoiceId }: { invoiceId: string }) {
-  const router = useRouter();
+interface DeleteButtonProps {
+  invoiceId: string;
+  onSuccess?: () => void | Promise<void>;
+}
+
+export function DeleteButton({
+  invoiceId,
+  onSuccess
+}: DeleteButtonProps) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -18,7 +24,8 @@ export function DeleteButton({ invoiceId }: { invoiceId: string }) {
       if (result.error) {
         setError(result.error);
       } else if (result.success) {
-        router.refresh();
+        // Trigger refresh callback
+        onSuccess?.();
       }
     });
   }

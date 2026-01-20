@@ -15,14 +15,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PlusIcon } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
-export function AddInvoice() {
+export function AddInvoice({ onSuccess }: { onSuccess?: () => void }) {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const router = useRouter()
   const formRef = useRef<HTMLFormElement>(null)
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -43,7 +41,8 @@ export function AddInvoice() {
       }
       setOpen(false)
       setLoading(false)
-      router.refresh()
+      // Trigger refresh callback
+      onSuccess?.()
     }
   }
 
@@ -63,7 +62,7 @@ export function AddInvoice() {
               請上傳並填寫發票資料
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 py-4">
             {error && (
               <div className="text-sm text-red-500 bg-red-50 dark:bg-red-950 p-2 rounded">
                 {error}
