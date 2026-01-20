@@ -1,4 +1,6 @@
-import { getInvoices } from "@/app/actions/invoice";
+"use client";
+
+import { getInvoices, type InvoiceWithUser } from "@/app/actions/invoice";
 import { AddInvoice } from "@/components/add-invoice";
 import { DeleteButton } from "@/components/delete-invoice-button";
 import { Button } from "@/components/ui/button";
@@ -8,11 +10,51 @@ import {
   ItemContent,
   ItemTitle
 } from "@/components/ui/item";
+import { useAuth } from "@/contexts/auth-context";
+import { createClient } from "@/lib/supabase/client";
 import { DownloadIcon } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 
-export default async function Home() {
-  const { data: invoices, error } = await getInvoices();
+export default function Home() {
+  const [invoices, setInvoices] = useState<InvoiceWithUser[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const { user, loading: authLoading } = useAuth();
+  const supabase = createClient();
+  const hasTriggeredLogin = useRef(false);
+
+  // 獲取發票列表
+  useEffect(() => {
+    async function fetchInvoices() {
+      setLoading(true);
+      const result = await getInvoices();
+      if (result.error) {
+        setError(result.error);
+        setInvoices(null);
+      } else {
+        setError(null);
+        setInvoices(result.data || []);
+      }
+      setLoading(false);
+    }
+
+    fetchInvoices();
+  }, []);
+
+  // 自動登入
+  useEffect(() => {
+    if (!authLoading && !user && !hasTriggeredLogin.current) {
+      hasTriggeredLogin.current = true;
+      supabase.auth.signInWithOAuth({
+        provider: "keycloak",
+        options: {
+          redirectTo: `${window.location.origin}/api/auth/callback`,
+          scopes: "openid",
+        },
+      });
+    }
+  }, [authLoading, user, supabase]);
 
   return (
     <div className="flex flex-col item-center justify-center max-w-5xl mx-auto p-4 gap-4">
@@ -26,7 +68,11 @@ export default async function Home() {
         </div>
       )}
       <div className="flex flex-col gap-4">
-        {!invoices || invoices.length === 0 ? (
+        {loading ? (
+          <div className="text-center text-muted-foreground py-8">
+            載入中...
+          </div>
+        ) : !invoices || invoices.length === 0 ? (
           <div className="text-center text-muted-foreground py-8">
             尚無發票記錄，點擊「新增」開始上傳發票
           </div>
