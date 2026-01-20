@@ -96,8 +96,7 @@ export default function Home() {
               </ItemContent>
               <ItemActions>
                 <Link
-                  href={invoice.image_url}
-                  download
+                  href={`/invoice/${invoice.id}`}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
