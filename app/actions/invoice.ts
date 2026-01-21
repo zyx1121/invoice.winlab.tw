@@ -1,32 +1,15 @@
 "use server";
 
+import type { InvoiceCategory, InvoiceCurrency } from "@/lib/invoice-constants";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import OpenAI from "openai";
-import type { InvoiceCategory, InvoiceCurrency } from "@/lib/invoice-constants";
-import { pdf } from "pdf-to-img";
+import { extractText } from "unpdf";
 
-// Convert PDF to PNG image (first page only)
-async function convertPdfToImage(pdfBuffer: ArrayBuffer): Promise<{
-  base64: string;
-  mimeType: string;
-}> {
-  // Use pdf-to-img to convert PDF to images
-  const pdfDoc = await pdf(Buffer.from(pdfBuffer), {
-    scale: 2, // 2x scale for better OCR quality
-  });
-
-  // Get the first page as PNG
-  for await (const image of pdfDoc) {
-    // image is a Buffer containing PNG data
-    const base64 = image.toString("base64");
-    return {
-      base64,
-      mimeType: "image/png",
-    };
-  }
-
-  throw new Error("PDF has no pages");
+// Extract text from PDF for AI parsing
+async function extractPdfText(pdfBuffer: ArrayBuffer): Promise<string> {
+  const { text } = await extractText(new Uint8Array(pdfBuffer), { mergePages: true });
+  return text;
 }
 
 export interface Invoice {
@@ -54,6 +37,51 @@ export interface ParsedInvoiceData {
   currency: InvoiceCurrency;
 }
 
+// JSON schema for structured outputs
+const invoiceJsonSchema = {
+  name: "invoice_data",
+  strict: true,
+  schema: {
+    type: "object",
+    properties: {
+      date: {
+        type: "string",
+        description: "Invoice date in YYYY-MM-DD format",
+      },
+      category: {
+        type: "string",
+        enum: ["車票", "住宿", "AI", "辦公用品", "五金", "電腦周邊", "餐費"],
+        description: "Product category",
+      },
+      name: {
+        type: "string",
+        description: "Product or service name",
+      },
+      amount: {
+        type: "number",
+        description: "Total amount without currency symbol",
+      },
+      currency: {
+        type: "string",
+        enum: ["TWD", "USD"],
+        description: "Currency type",
+      },
+    },
+    required: ["date", "category", "name", "amount", "currency"],
+    additionalProperties: false,
+  },
+} as const;
+
+const systemPrompt = `You are an invoice parser. Analyze the invoice content and extract the following information:
+- date: The invoice date in YYYY-MM-DD format
+- category: Must be one of: 車票, 住宿, AI, 辦公用品, 五金, 電腦周邊, 餐費
+- name: The product or service name
+- amount: The total amount as a number (without currency symbol)
+- currency: Must be TWD or USD based on the invoice
+
+If you cannot determine a field, make a reasonable guess based on the context.
+For category, analyze the products/services on the invoice and pick the most appropriate category.`;
+
 // Parse invoice using OpenAI GPT-5.2 with structured outputs
 export async function parseInvoice(formData: FormData): Promise<{
   data?: ParsedInvoiceData;
@@ -79,97 +107,77 @@ export async function parseInvoice(formData: FormData): Promise<{
       return { error: "不支援的檔案格式，請上傳圖片或 PDF 檔案" };
     }
 
-    // Convert file to base64 (handle PDF conversion)
     const arrayBuffer = await imageFile.arrayBuffer();
-    let base64: string;
-    let mimeType: string;
-
-    if (imageFile.type === "application/pdf") {
-      // Convert PDF to image first
-      const converted = await convertPdfToImage(arrayBuffer);
-      base64 = converted.base64;
-      mimeType = converted.mimeType;
-    } else {
-      // Regular image - just encode as base64
-      base64 = Buffer.from(arrayBuffer).toString("base64");
-      mimeType = imageFile.type;
-    }
+    const isPdf = imageFile.type === "application/pdf";
 
     // Initialize OpenAI client
     const openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    // Call GPT-5.2 with vision and structured outputs
-    const response = await openai.chat.completions.create({
-      model: "gpt-5.2",
-      messages: [
-        {
-          role: "system",
-          content: `You are an invoice parser. Analyze the invoice image and extract the following information:
-- date: The invoice date in YYYY-MM-DD format
-- category: Must be one of: 車票, 住宿, AI, 辦公用品, 五金, 電腦周邊, 餐費
-- name: The product or service name
-- amount: The total amount as a number (without currency symbol)
-- currency: Must be TWD or USD based on the invoice
+    let response;
 
-If you cannot determine a field, make a reasonable guess based on the context.
-For category, analyze the products/services on the invoice and pick the most appropriate category.`,
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: "Please analyze this invoice and extract the required information.",
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${mimeType};base64,${base64}`,
-              },
-            },
-          ],
-        },
-      ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "invoice_data",
-          strict: true,
-          schema: {
-            type: "object",
-            properties: {
-              date: {
-                type: "string",
-                description: "Invoice date in YYYY-MM-DD format",
-              },
-              category: {
-                type: "string",
-                enum: ["車票", "住宿", "AI", "辦公用品", "五金", "電腦周邊", "餐費"],
-                description: "Product category",
-              },
-              name: {
-                type: "string",
-                description: "Product or service name",
-              },
-              amount: {
-                type: "number",
-                description: "Total amount without currency symbol",
-              },
-              currency: {
-                type: "string",
-                enum: ["TWD", "USD"],
-                description: "Currency type",
-              },
-            },
-            required: ["date", "category", "name", "amount", "currency"],
-            additionalProperties: false,
+    if (isPdf) {
+      // For PDF: extract text and send as text prompt
+      const pdfText = await extractPdfText(arrayBuffer);
+
+      if (!pdfText || pdfText.trim().length === 0) {
+        return { error: "無法從 PDF 中提取文字，請嘗試上傳圖片格式" };
+      }
+
+      response = await openai.chat.completions.create({
+        model: "gpt-5.2",
+        messages: [
+          {
+            role: "system",
+            content: systemPrompt,
           },
+          {
+            role: "user",
+            content: `Please analyze this invoice text and extract the required information:\n\n${pdfText}`,
+          },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: invoiceJsonSchema,
         },
-      },
-      max_completion_tokens: 1000,
-    });
+        max_completion_tokens: 1000,
+      });
+    } else {
+      // For images: use vision capabilities
+      const base64 = Buffer.from(arrayBuffer).toString("base64");
+      const mimeType = imageFile.type;
+
+      response = await openai.chat.completions.create({
+        model: "gpt-5.2",
+        messages: [
+          {
+            role: "system",
+            content: systemPrompt,
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Please analyze this invoice image and extract the required information.",
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:${mimeType};base64,${base64}`,
+                },
+              },
+            ],
+          },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: invoiceJsonSchema,
+        },
+        max_completion_tokens: 1000,
+      });
+    }
 
     const content = response.choices[0]?.message?.content;
     if (!content) {

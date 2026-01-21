@@ -1,8 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Handle pdfjs-dist worker file issues in server-side
-  serverExternalPackages: ["pdf-to-img", "pdfjs-dist", "canvas"],
+  // Handle unpdf in server-side environment
+  serverExternalPackages: ["unpdf"],
 };
 
 export default nextConfig;
