@@ -1,8 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Handle unpdf in server-side environment
-  serverExternalPackages: ["unpdf"],
+  /* config options here */
 };
 
 export default nextConfig;

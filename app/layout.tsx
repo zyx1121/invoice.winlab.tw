@@ -32,9 +32,11 @@ export default function RootLayout({
                 {/* <Background /> */}
               </div>
               <div className="relative flex flex-col min-h-dvh">
-                <Header />
-                <Separator />
-                <main className="flex-1">{children}</main>
+                <div className="fixed top-0 left-0 right-0 z-50 bg-background/75 backdrop-blur-md">
+                  <Header />
+                  <Separator />
+                </div>
+                <main className="flex-1 pt-16">{children}</main>
                 <Footer />
               </div>
             </div>

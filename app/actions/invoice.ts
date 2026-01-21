@@ -4,13 +4,6 @@ import type { InvoiceCategory, InvoiceCurrency } from "@/lib/invoice-constants";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import OpenAI from "openai";
-import { extractText } from "unpdf";
-
-// Extract text from PDF for AI parsing
-async function extractPdfText(pdfBuffer: ArrayBuffer): Promise<string> {
-  const { text } = await extractText(new Uint8Array(pdfBuffer), { mergePages: true });
-  return text;
-}
 
 export interface Invoice {
   id: string;
@@ -83,6 +76,7 @@ If you cannot determine a field, make a reasonable guess based on the context.
 For category, analyze the products/services on the invoice and pick the most appropriate category.`;
 
 // Parse invoice using OpenAI GPT-5.2 with structured outputs
+// Note: PDF files are converted to images on the client side before being sent here
 export async function parseInvoice(formData: FormData): Promise<{
   data?: ParsedInvoiceData;
   error?: string;
@@ -94,90 +88,57 @@ export async function parseInvoice(formData: FormData): Promise<{
       return { error: "請選擇有效的檔案" };
     }
 
-    // Validate file type
+    // Validate file type - only images are accepted (PDFs are converted client-side)
     const allowedTypes = [
       "image/jpeg",
       "image/png",
       "image/gif",
       "image/webp",
       "image/jpg",
-      "application/pdf",
     ];
     if (!allowedTypes.includes(imageFile.type)) {
-      return { error: "不支援的檔案格式，請上傳圖片或 PDF 檔案" };
+      return { error: "不支援的檔案格式，請上傳圖片檔案" };
     }
 
     const arrayBuffer = await imageFile.arrayBuffer();
-    const isPdf = imageFile.type === "application/pdf";
+    const base64 = Buffer.from(arrayBuffer).toString("base64");
+    const mimeType = imageFile.type;
 
     // Initialize OpenAI client
     const openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    let response;
-
-    if (isPdf) {
-      // For PDF: extract text and send as text prompt
-      const pdfText = await extractPdfText(arrayBuffer);
-
-      if (!pdfText || pdfText.trim().length === 0) {
-        return { error: "無法從 PDF 中提取文字，請嘗試上傳圖片格式" };
-      }
-
-      response = await openai.chat.completions.create({
-        model: "gpt-5.2",
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt,
-          },
-          {
-            role: "user",
-            content: `Please analyze this invoice text and extract the required information:\n\n${pdfText}`,
-          },
-        ],
-        response_format: {
-          type: "json_schema",
-          json_schema: invoiceJsonSchema,
+    // Use vision capabilities to analyze the invoice image
+    const response = await openai.chat.completions.create({
+      model: "gpt-5.2",
+      messages: [
+        {
+          role: "system",
+          content: systemPrompt,
         },
-        max_completion_tokens: 1000,
-      });
-    } else {
-      // For images: use vision capabilities
-      const base64 = Buffer.from(arrayBuffer).toString("base64");
-      const mimeType = imageFile.type;
-
-      response = await openai.chat.completions.create({
-        model: "gpt-5.2",
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt,
-          },
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "Please analyze this invoice image and extract the required information.",
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Please analyze this invoice image and extract the required information.",
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${mimeType};base64,${base64}`,
               },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:${mimeType};base64,${base64}`,
-                },
-              },
-            ],
-          },
-        ],
-        response_format: {
-          type: "json_schema",
-          json_schema: invoiceJsonSchema,
+            },
+          ],
         },
-        max_completion_tokens: 1000,
-      });
-    }
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: invoiceJsonSchema,
+      },
+      max_completion_tokens: 1000,
+    });
 
     const content = response.choices[0]?.message?.content;
     if (!content) {
@@ -235,21 +196,20 @@ export async function uploadInvoice(formData: FormData) {
       return { error: "檔案大小不能超過 10MB" };
     }
 
-    // Validate file type
+    // Validate file type - only images are accepted (PDFs are converted client-side)
     const allowedTypes = [
       "image/jpeg",
       "image/png",
       "image/gif",
       "image/webp",
       "image/jpg",
-      "application/pdf",
     ];
     if (!allowedTypes.includes(imageFile.type)) {
-      return { error: "不支援的檔案格式，請上傳圖片或 PDF 檔案" };
+      return { error: "不支援的檔案格式，請上傳圖片檔案" };
     }
 
-    // Determine file type
-    const fileType = imageFile.type === "application/pdf" ? "pdf" : "image";
+    // All files are now images (PDFs converted on client)
+    const fileType = "image";
 
     // Upload file to storage
     const fileExt = imageFile.name.split(".").pop();

@@ -29,6 +29,7 @@ import {
   INVOICE_CATEGORIES,
   INVOICE_CURRENCIES,
 } from "@/lib/invoice-constants";
+import { convertPdfToImage, isPdfFile } from "@/lib/pdf-to-image";
 import { Loader2Icon, PlusIcon, SparklesIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -70,13 +71,21 @@ export function AddInvoice({ onSuccess }: { onSuccess?: () => void }) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setSelectedFile(file);
     setError(null);
     setParsing(true);
 
     try {
+      // Convert PDF to image if needed (client-side conversion)
+      let processedFile = file;
+      if (isPdfFile(file)) {
+        processedFile = await convertPdfToImage(file);
+      }
+
+      // Store the processed file (image) for later upload
+      setSelectedFile(processedFile);
+
       const formData = new FormData();
-      formData.append("image", file);
+      formData.append("image", processedFile);
 
       const result = await parseInvoice(formData);
 
@@ -93,6 +102,7 @@ export function AddInvoice({ onSuccess }: { onSuccess?: () => void }) {
         setStep("review");
       }
     } catch (err) {
+      console.error("Parse error:", err);
       setError("解析發票時發生錯誤");
     } finally {
       setParsing(false);
@@ -161,7 +171,7 @@ export function AddInvoice({ onSuccess }: { onSuccess?: () => void }) {
 
           <div className="flex flex-col gap-4 py-4">
             {error && (
-              <div className="text-sm text-red-500 bg-red-50 dark:bg-red-950 p-2 rounded">
+              <div className="text-sm text-red-500 bg-red-50 dark:bg-red-950 p-2 rounded-md">
                 {error}
               </div>
             )}
@@ -190,7 +200,7 @@ export function AddInvoice({ onSuccess }: { onSuccess?: () => void }) {
 
             {step === "review" && parsedData && (
               <>
-                <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950 p-2 rounded">
+                <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950 p-2 rounded-md">
                   <SparklesIcon className="w-4 h-4" />
                   AI 辨識完成，請確認以下資料
                 </div>
