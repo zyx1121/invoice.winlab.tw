@@ -102,12 +102,17 @@ export async function GET(
 
     const downloadFileName = `${baseName}${formattedDate}.${fileExtension}`;
 
+    // Create safe ASCII filename for fallback and RFC 5987 encoded filename for UTF-8 support
+    const asciiFileName = `invoice${formattedDate}.${fileExtension}`;
+    const encodedFileName = encodeURIComponent(downloadFileName);
+
     // Return file with appropriate headers
     // Use attachment to force download, and set proper filename
+    // RFC 5987: filename for ASCII fallback, filename* for UTF-8 encoded name
     return new NextResponse(buffer, {
       headers: {
         "Content-Type": contentType,
-        "Content-Disposition": `attachment; filename="${downloadFileName}"`,
+        "Content-Disposition": `attachment; filename="${asciiFileName}"; filename*=UTF-8''${encodedFileName}`,
         "Content-Length": buffer.length.toString(),
         "Cache-Control": "public, max-age=3600",
         "X-Content-Type-Options": "nosniff",

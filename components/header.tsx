@@ -8,10 +8,10 @@ export function Header() {
   const { user } = useAuth();
 
   return (
-    <header className="flex items-center justify-between p-4 px-6 w-full max-w-5xl mx-auto">
+    <header className="flex items-center justify-between p-4 w-full">
       <div className="flex items-center gap-2">
         <Link href="/">
-          <h1 className="text-2xl text-foreground font-bold hover:scale-105 transition-transform duration-200">
+          <h1 className="text-2xl mx-2 text-foreground font-bold hover:scale-105 transition-transform duration-200">
             Invoice
           </h1>
         </Link>

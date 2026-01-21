@@ -87,7 +87,12 @@ export default function Home() {
                 <ItemTitle className="text-lg font-bold">{invoice.name}</ItemTitle>
                 <div className="text-base text-muted-foreground">
                   <div className="flex flex-col gap-1">
-                    <div>發票金額：NT$ {Number(invoice.amount).toLocaleString()}</div>
+                    <div>
+                      發票金額：
+                      {invoice.currency === "USD" ? "US$ " : "NT$ "}
+                      {Number(invoice.amount).toLocaleString()}
+                    </div>
+                    {invoice.category && <div>商品類型：{invoice.category}</div>}
                     <div>發票日期：{new Date(invoice.date).toLocaleDateString("zh-TW")}</div>
                     <div>上傳用戶：{invoice.user_name || invoice.user_email || "未知"}</div>
                     <div>上傳時間：{new Date(invoice.created_at).toLocaleString("zh-TW")}</div>

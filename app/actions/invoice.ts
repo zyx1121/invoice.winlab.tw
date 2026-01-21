@@ -2,6 +2,32 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import OpenAI from "openai";
+import type { InvoiceCategory, InvoiceCurrency } from "@/lib/invoice-constants";
+import { pdf } from "pdf-to-img";
+
+// Convert PDF to PNG image (first page only)
+async function convertPdfToImage(pdfBuffer: ArrayBuffer): Promise<{
+  base64: string;
+  mimeType: string;
+}> {
+  // Use pdf-to-img to convert PDF to images
+  const pdfDoc = await pdf(Buffer.from(pdfBuffer), {
+    scale: 2, // 2x scale for better OCR quality
+  });
+
+  // Get the first page as PNG
+  for await (const image of pdfDoc) {
+    // image is a Buffer containing PNG data
+    const base64 = image.toString("base64");
+    return {
+      base64,
+      mimeType: "image/png",
+    };
+  }
+
+  throw new Error("PDF has no pages");
+}
 
 export interface Invoice {
   id: string;
@@ -9,12 +35,155 @@ export interface Invoice {
   image_url: string;
   file_type?: string | null;
   date: string;
+  category?: string | null;
   name: string;
   amount: number;
+  currency?: string | null;
   created_at: string;
   updated_at: string;
   user_email?: string | null;
   user_name?: string | null;
+}
+
+// Parsed invoice data from AI
+export interface ParsedInvoiceData {
+  date: string;
+  category: InvoiceCategory;
+  name: string;
+  amount: number;
+  currency: InvoiceCurrency;
+}
+
+// Parse invoice using OpenAI GPT-5.2 with structured outputs
+export async function parseInvoice(formData: FormData): Promise<{
+  data?: ParsedInvoiceData;
+  error?: string;
+}> {
+  try {
+    const imageFile = formData.get("image") as File;
+
+    if (!imageFile || imageFile.size === 0) {
+      return { error: "請選擇有效的檔案" };
+    }
+
+    // Validate file type
+    const allowedTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+      "image/jpg",
+      "application/pdf",
+    ];
+    if (!allowedTypes.includes(imageFile.type)) {
+      return { error: "不支援的檔案格式，請上傳圖片或 PDF 檔案" };
+    }
+
+    // Convert file to base64 (handle PDF conversion)
+    const arrayBuffer = await imageFile.arrayBuffer();
+    let base64: string;
+    let mimeType: string;
+
+    if (imageFile.type === "application/pdf") {
+      // Convert PDF to image first
+      const converted = await convertPdfToImage(arrayBuffer);
+      base64 = converted.base64;
+      mimeType = converted.mimeType;
+    } else {
+      // Regular image - just encode as base64
+      base64 = Buffer.from(arrayBuffer).toString("base64");
+      mimeType = imageFile.type;
+    }
+
+    // Initialize OpenAI client
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+
+    // Call GPT-5.2 with vision and structured outputs
+    const response = await openai.chat.completions.create({
+      model: "gpt-5.2",
+      messages: [
+        {
+          role: "system",
+          content: `You are an invoice parser. Analyze the invoice image and extract the following information:
+- date: The invoice date in YYYY-MM-DD format
+- category: Must be one of: 車票, 住宿, AI, 辦公用品, 五金, 電腦周邊, 餐費
+- name: The product or service name
+- amount: The total amount as a number (without currency symbol)
+- currency: Must be TWD or USD based on the invoice
+
+If you cannot determine a field, make a reasonable guess based on the context.
+For category, analyze the products/services on the invoice and pick the most appropriate category.`,
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Please analyze this invoice and extract the required information.",
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${mimeType};base64,${base64}`,
+              },
+            },
+          ],
+        },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "invoice_data",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              date: {
+                type: "string",
+                description: "Invoice date in YYYY-MM-DD format",
+              },
+              category: {
+                type: "string",
+                enum: ["車票", "住宿", "AI", "辦公用品", "五金", "電腦周邊", "餐費"],
+                description: "Product category",
+              },
+              name: {
+                type: "string",
+                description: "Product or service name",
+              },
+              amount: {
+                type: "number",
+                description: "Total amount without currency symbol",
+              },
+              currency: {
+                type: "string",
+                enum: ["TWD", "USD"],
+                description: "Currency type",
+              },
+            },
+            required: ["date", "category", "name", "amount", "currency"],
+            additionalProperties: false,
+          },
+        },
+      },
+      max_completion_tokens: 1000,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      return { error: "AI 無法解析發票內容" };
+    }
+
+    const parsedData = JSON.parse(content) as ParsedInvoiceData;
+    return { data: parsedData };
+  } catch (error) {
+    console.error("Parse invoice error:", error);
+    return {
+      error: error instanceof Error ? error.message : "解析發票時發生錯誤",
+    };
+  }
 }
 
 export interface InvoiceWithUser extends Invoice {
@@ -39,8 +208,10 @@ export async function uploadInvoice(formData: FormData) {
     // Get form data
     const imageFile = formData.get("image") as File;
     const date = formData.get("date") as string;
+    const category = formData.get("category") as string;
     const name = formData.get("name") as string;
     const amount = formData.get("amount") as string;
+    const currency = formData.get("currency") as string;
 
     // Validate required fields
     if (!imageFile || !date || !name || !amount) {
@@ -75,9 +246,8 @@ export async function uploadInvoice(formData: FormData) {
     // Upload file to storage
     const fileExt = imageFile.name.split(".").pop();
     const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-    const filePath = `invoice_files/${fileName}`;
 
-    const { data: uploadData, error: uploadError } = await supabase.storage
+    const { error: uploadError } = await supabase.storage
       .from("invoice_files")
       .upload(fileName, imageFile, {
         cacheControl: "3600",
@@ -94,7 +264,7 @@ export async function uploadInvoice(formData: FormData) {
       data: { publicUrl },
     } = supabase.storage.from("invoice_files").getPublicUrl(fileName);
 
-    // Insert invoice record
+    // Insert invoice record with new fields
     const { data: invoiceData, error: insertError } = await supabase
       .from("invoice_invoices")
       .insert({
@@ -102,8 +272,10 @@ export async function uploadInvoice(formData: FormData) {
         image_url: publicUrl,
         file_type: fileType,
         date,
+        category: category || null,
         name,
         amount: parseFloat(amount),
+        currency: currency || "TWD",
       })
       .select()
       .single();
