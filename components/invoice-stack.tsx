@@ -247,17 +247,19 @@ export function InvoiceStack({
                               </Button>
                             </>
                           )}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-8"
-                            onClick={() => handleDownloadAll(inv)}
-                            disabled={!urls.length || downloadingId === inv.id}
-                            title="下載此申報所有照片"
-                          >
-                            <Download className="size-4" />
-                          </Button>
+                          {(isOwner || isInvoiceAdmin) && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-8"
+                              onClick={() => handleDownloadAll(inv)}
+                              disabled={!urls.length || downloadingId === inv.id}
+                              title="下載此申報所有照片"
+                            >
+                              <Download className="size-4" />
+                            </Button>
+                          )}
                           {isOwner && (
                             <Button
                               type="button"
