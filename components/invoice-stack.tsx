@@ -169,6 +169,7 @@ export function InvoiceStack({
               const offsetY = i * STACK_OFFSET_PX;
               const z = invoices.length - 1 - i;
               const thumb = getInvoiceThumbnailUrl(inv);
+              const isOwner = user?.id === inv.user_id;
               return (
                 <div
                   key={inv.id}
@@ -182,7 +183,10 @@ export function InvoiceStack({
                     <img
                       src={thumb}
                       alt=""
-                      className="max-h-full max-w-full w-auto h-auto object-contain pointer-events-none blur-[2px]"
+                      className={cn(
+                        "max-h-full max-w-full w-auto h-auto object-contain pointer-events-none",
+                        !isOwner && "blur-[2px]"
+                      )}
                     />
                   ) : (
                     <div className="h-full w-full flex items-center justify-center text-muted-foreground/50 text-sm bg-muted">
@@ -305,7 +309,10 @@ export function InvoiceStack({
                             <img
                               src={url}
                               alt=""
-                              className="max-w-full max-h-[78vh] w-auto h-auto block pointer-events-none blur-[2px]"
+                              className={cn(
+                                "max-w-full max-h-[78vh] w-auto h-auto block pointer-events-none",
+                                !isOwner && "blur-[2px]"
+                              )}
                             />
                           </button>
                         ))}
