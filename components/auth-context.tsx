@@ -101,7 +101,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         if (mounted) {
-          setUser(session?.user ?? null);
+          setUser((prev) => {
+            const next = session?.user ?? null;
+            return prev?.id === next?.id ? prev : next;
+          });
         }
       } catch (error) {
         console.error("[Auth] initializeAuth failed:", error);
@@ -140,7 +143,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (mounted) {
-        setUser(session?.user ?? null);
+        setUser((prev) => {
+          const next = session?.user ?? null;
+          return prev?.id === next?.id ? prev : next;
+        });
       }
     });
 

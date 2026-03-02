@@ -85,6 +85,81 @@ export async function deleteInvoice(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+export interface UpdateInvoicePayload {
+  reason: string;
+  notes: string;
+  /** Subset of original image_paths to keep (in order). If undefined, keep all. */
+  keepPaths?: string[];
+  /** New files to append after the kept images. */
+  newBlobs?: Blob[];
+}
+
+/**
+ * Update invoice fields and optionally manage images.
+ * Deletes removed paths from storage, uploads new blobs, updates image_paths.
+ * Only succeeds if the current user is the owner (RLS).
+ */
+export async function updateInvoice(
+  id: string,
+  payload: UpdateInvoicePayload
+): Promise<void> {
+  const supabase = createClient();
+
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) throw new Error("Not authenticated");
+
+  const hasImageChanges =
+    payload.keepPaths !== undefined || (payload.newBlobs && payload.newBlobs.length > 0);
+
+  if (!hasImageChanges) {
+    const { data: updated, error } = await supabase
+      .from("invoice")
+      .update({ reason: payload.reason, notes: payload.notes })
+      .eq("id", id)
+      .select("id");
+    if (error) throw new Error(error.message);
+    if (!updated || updated.length === 0) throw new Error("儲存失敗，請確認您有權限修改此申報");
+    return;
+  }
+
+  const { data: existing, error: fetchError } = await supabase
+    .from("invoice")
+    .select("image_paths")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single();
+  if (fetchError) throw new Error("找不到此申報或您無權限修改");
+
+  const oldPaths: string[] = existing?.image_paths ?? [];
+  const keepPaths = payload.keepPaths ?? oldPaths;
+
+  const pathsToDelete = oldPaths.filter((p) => !keepPaths.includes(p));
+  if (pathsToDelete.length > 0) {
+    await supabase.storage.from(INVOICE_BUCKET).remove(pathsToDelete);
+  }
+
+  const newPaths: string[] = [];
+  if (payload.newBlobs && payload.newBlobs.length > 0) {
+    const ts = Date.now();
+    for (let i = 0; i < payload.newBlobs.length; i++) {
+      const path = `${user.id}/${id}/edit_${ts}_${i + 1}.jpg`;
+      const { error: uploadError } = await supabase.storage
+        .from(INVOICE_BUCKET)
+        .upload(path, payload.newBlobs[i], { contentType: "image/jpeg", upsert: false });
+      if (uploadError) throw new Error(`圖片上傳失敗：${uploadError.message}`);
+      newPaths.push(path);
+    }
+  }
+
+  const { data: updated, error } = await supabase
+    .from("invoice")
+    .update({ reason: payload.reason, notes: payload.notes, image_paths: [...keepPaths, ...newPaths] })
+    .eq("id", id)
+    .select("id");
+  if (error) throw new Error(error.message);
+  if (!updated || updated.length === 0) throw new Error("儲存失敗，請確認您有權限修改此申報");
+}
+
 /**
  * Update invoice status. Only succeeds if the current user has invoice admin role (RLS).
  */
