@@ -12,8 +12,10 @@ import type { InvoiceRecord } from "@/lib/invoice-types";
 import { deleteInvoice, updateInvoiceStatus } from "@/lib/invoice-upload";
 import { cn } from "@/lib/utils";
 import JSZip from "jszip";
-import { Ban, Download, PanelBottomClose, Stamp, Trash2 } from "lucide-react";
+import { Ban, Download, ExternalLink, Pencil, PanelBottomClose, Stamp, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { EditInvoiceDialog } from "@/components/edit-invoice-dialog";
 const STACK_OFFSET_PX = 6;
 const ROTATION_RANGE = 8;
 
@@ -63,6 +65,7 @@ export function InvoiceStack({
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [isInvoiceAdmin, setIsInvoiceAdmin] = useState(false);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+  const [editingInvoice, setEditingInvoice] = useState<InvoiceRecord | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -150,6 +153,7 @@ export function InvoiceStack({
   if (invoices.length === 0) return null;
 
   return (
+    <>
     <div
       className={cn("flex flex-col items-center justify-center shrink-0", className)}
       onClick={(e) => e.stopPropagation()}
@@ -213,67 +217,91 @@ export function InvoiceStack({
                       key={inv.id}
                       className="flex flex-col items-center w-full gap-2"
                     >
-                      <div className="flex items-center justify-between gap-2 w-full">
-                        <div className="flex items-center gap-2 min-w-0 flex-1">
-                          <p className="text-xl font-bold text-foreground truncate min-w-0">
-                            {inv.reason}
-                          </p>
-                          <StatusBadge status={inv.status} />
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {isInvoiceAdmin && (
-                            <>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="size-8 text-green-600 hover:text-green-700 hover:bg-green-500/10"
-                                onClick={() => handleStatusChange(inv, "approved")}
-                                disabled={updatingStatusId === inv.id || inv.status === "approved"}
-                                title="通過"
-                              >
-                                <Stamp className="size-4" />
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="size-8 text-destructive hover:text-destructive"
-                                onClick={() => handleStatusChange(inv, "rejected")}
-                                disabled={updatingStatusId === inv.id || inv.status === "rejected"}
-                                title="拒絕"
-                              >
-                                <Ban className="size-4" />
-                              </Button>
-                            </>
-                          )}
-                          {(isOwner || isInvoiceAdmin) && (
+                      <div className="flex items-center gap-2 w-full min-w-0">
+                        <p className="text-xl font-bold text-foreground truncate min-w-0">
+                          {inv.reason}
+                        </p>
+                        <StatusBadge status={inv.status} />
+                      </div>
+                      <div className="flex items-center gap-1 w-full -ml-2">
+                        {isInvoiceAdmin && (
+                          <>
                             <Button
                               type="button"
                               variant="ghost"
                               size="icon"
-                              className="size-8"
-                              onClick={() => handleDownloadAll(inv)}
-                              disabled={!urls.length || downloadingId === inv.id}
-                              title="下載此申報所有照片"
+                              className="size-8 text-green-600 hover:text-green-700 hover:bg-green-500/10"
+                              onClick={() => handleStatusChange(inv, "approved")}
+                              disabled={updatingStatusId === inv.id || inv.status === "approved"}
+                              title="通過"
                             >
-                              <Download className="size-4" />
+                              <Stamp className="size-4" />
                             </Button>
-                          )}
-                          {isOwner && (
                             <Button
                               type="button"
                               variant="ghost"
                               size="icon"
                               className="size-8 text-destructive hover:text-destructive"
-                              onClick={() => handleDelete(inv)}
-                              disabled={deletingId === inv.id}
-                              title="刪除"
+                              onClick={() => handleStatusChange(inv, "rejected")}
+                              disabled={updatingStatusId === inv.id || inv.status === "rejected"}
+                              title="拒絕"
                             >
-                              <Trash2 className="size-4" />
+                              <Ban className="size-4" />
                             </Button>
-                          )}
-                        </div>
+                          </>
+                        )}
+                        {isOwner && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8"
+                            onClick={() => setEditingInvoice(inv)}
+                            title="編輯"
+                          >
+                            <Pencil className="size-4" />
+                          </Button>
+                        )}
+                        {(isOwner || isInvoiceAdmin) && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8"
+                            onClick={() => handleDownloadAll(inv)}
+                            disabled={!urls.length || downloadingId === inv.id}
+                            title="下載此申報所有照片"
+                          >
+                            <Download className="size-4" />
+                          </Button>
+                        )}
+                        {isOwner && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-destructive hover:text-destructive"
+                            onClick={() => handleDelete(inv)}
+                            disabled={deletingId === inv.id}
+                            title="刪除"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        )}
+                        <Link
+                          href={`/invoice/${inv.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-8"
+                            title="前往申報頁面"
+                          >
+                            <ExternalLink className="size-4" />
+                          </Button>
+                        </Link>
                       </div>
                       {inv.notes ? (
                         <p className="text-lg text-muted-foreground/90 text-left line-clamp-2 w-full">
@@ -337,5 +365,15 @@ export function InvoiceStack({
         )}
       </div>
     </div>
+
+    {editingInvoice && (
+      <EditInvoiceDialog
+        open={!!editingInvoice}
+        onOpenChange={(open) => { if (!open) setEditingInvoice(null); }}
+        invoice={editingInvoice}
+        onSuccess={() => { setEditingInvoice(null); onRefresh(); }}
+      />
+    )}
+    </>
   );
 }

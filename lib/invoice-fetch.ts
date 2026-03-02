@@ -45,3 +45,14 @@ export function getInvoiceThumbnailUrl(record: InvoiceRecord): string {
 export function getInvoiceImageUrls(record: InvoiceRecord): string[] {
   return (record.image_paths ?? []).map(getInvoiceImageUrl);
 }
+
+export async function fetchInvoiceById(id: string): Promise<InvoiceRecord | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("invoice")
+    .select("*")
+    .eq("id", id)
+    .single();
+  if (error) return null;
+  return data as InvoiceRecord;
+}
